@@ -164,15 +164,11 @@ final class TaskStore: ObservableObject {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             while let self, !Task.isCancelled {
-                let interval = await self.currentPollInterval()
+                let interval = self.pollInterval
                 try? await Task.sleep(for: .seconds(interval))
                 await self.refreshTasks()
             }
         }
-    }
-
-    private func currentPollInterval() -> TimeInterval {
-        pollInterval
     }
 
     private func refreshTasks() async {
@@ -207,7 +203,7 @@ final class TaskStore: ObservableObject {
             case let .httpError(status, message) where status == 429:
                 let backoff = parseRetryAfter(from: message) ?? 60
                 pollInterval = max(backoff, 30)
-                print("Hit rate limit, backing off polling to \(pollInterval)s")
+                print("Hit rate limit, backing off polling to \(Int(pollInterval))s")
             default:
                 print("Failed to refresh tasks: \(taskError.localizedDescription)")
             }
