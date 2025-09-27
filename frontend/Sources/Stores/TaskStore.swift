@@ -21,6 +21,7 @@ final class TaskStore: ObservableObject {
 
     nonisolated let service: TaskService
     private var refreshTask: Task<Void, Never>?
+    private var pollInterval: TimeInterval = 15
 
     init(service: TaskService) {
         self.service = service
@@ -163,10 +164,15 @@ final class TaskStore: ObservableObject {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             while let self, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
+                let interval = await self.currentPollInterval()
+                try? await Task.sleep(for: .seconds(interval))
                 await self.refreshTasks()
             }
         }
+    }
+
+    private func currentPollInterval() -> TimeInterval {
+        pollInterval
     }
 
     private func refreshTasks() async {
@@ -183,9 +189,37 @@ final class TaskStore: ObservableObject {
             if composerMode == .none && !showingSettings {
                 showingTaskPanel = !sorted.isEmpty
             }
+
+            updatePollInterval(for: sorted)
         } catch {
+            handleRefreshError(error)
+        }
+    }
+
+    private func updatePollInterval(for tasks: [CodexTask]) {
+        let hasActive = tasks.contains { [.queued, .running, .waitingApproval].contains($0.status) }
+        pollInterval = hasActive ? 15 : 45
+    }
+
+    private func handleRefreshError(_ error: Error) {
+        if let taskError = error as? TaskServiceError {
+            switch taskError {
+            case let .httpError(status, message) where status == 429:
+                let backoff = parseRetryAfter(from: message) ?? 60
+                pollInterval = max(backoff, 30)
+                print("Hit rate limit, backing off polling to \(pollInterval)s")
+            default:
+                print("Failed to refresh tasks: \(taskError.localizedDescription)")
+            }
+        } else {
             print("Failed to refresh tasks: \(error)")
         }
+    }
+
+    private func parseRetryAfter(from message: String?) -> TimeInterval? {
+        guard let message, let data = message.data(using: .utf8) else { return nil }
+        struct RateLimitPayload: Decodable { let retryAfter: TimeInterval? }
+        return try? JSONDecoder().decode(RateLimitPayload.self, from: data).retryAfter
     }
 }
 

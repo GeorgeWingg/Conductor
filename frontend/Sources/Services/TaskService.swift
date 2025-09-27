@@ -175,7 +175,7 @@ private struct TaskLogDTO: Decodable {
 
 private struct EmptyResponse: Decodable {}
 
-private enum TaskServiceError: LocalizedError {
+enum TaskServiceError: LocalizedError {
     case missingData(String)
     case invalidResponse
     case httpError(status: Int, message: String?)
