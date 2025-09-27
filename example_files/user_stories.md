@@ -1,0 +1,3 @@
+- Click buttons to choose Rock/Paper/Scissors
+- See immediate win/lose/draw feedback
+- Score persists during session
