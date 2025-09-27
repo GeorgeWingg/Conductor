@@ -5,6 +5,8 @@
 - Keep the stack Swift-only so we can iterate fast while the Node backend matures separately.
 - Capture UI requirements from the sketch so component work can begin before high-fidelity assets land.
 
+![Toolbar sketch](design/toolbar-sketch-20250927.jpg)
+
 ## Visual Layout
 1. **Menu Bar Entry:** Circular icon + badge communicates aggregate state (idle, running, attention). Tooltip rotates the most recent task title. citeturn7view0
 2. **Button Row:** Three controls inspired by macOS traffic lights:
