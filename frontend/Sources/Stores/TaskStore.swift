@@ -18,13 +18,42 @@ final class TaskStore: ObservableObject {
     @Published var voiceDraft: VoiceDraft = .empty
     @Published var isLoading = false
     @Published var defaultApprovalMode: ApprovalMode = .autoEdit
+    @Published var voiceErrorMessage: String?
+    @Published var isProcessingVoice = false
 
     nonisolated let service: TaskService
+    private let voiceCaptureService: VoiceCaptureService
+    private let transcriptionService: VoiceTranscriptionService
+
     private var refreshTask: Task<Void, Never>?
     private var pollInterval: TimeInterval = 15
+    private var pendingRecordingURL: URL?
 
-    init(service: TaskService) {
+    init(
+        service: TaskService,
+        voiceCaptureService: VoiceCaptureService = VoiceCaptureService(),
+        transcriptionService: VoiceTranscriptionService = VoiceTranscriptionService()
+    ) {
         self.service = service
+        self.voiceCaptureService = voiceCaptureService
+        self.transcriptionService = transcriptionService
+
+        voiceCaptureService.levelHandler = { [weak self] level in
+            guard let self else { return }
+            self.voiceDraft.level = level
+        }
+
+        voiceCaptureService.completionHandler = { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let url):
+                self.pendingRecordingURL = url
+                Task { await self.transcribeVoice(at: url) }
+            case .failure(let error):
+                self.voiceErrorMessage = error.localizedDescription
+                self.pendingRecordingURL = nil
+            }
+        }
     }
 
     deinit {
@@ -129,6 +158,18 @@ final class TaskStore: ObservableObject {
             await refreshTasks()
         } catch {
             print("Failed to cancel task: \(error)")
+        }
+    }
+
+    func delete(task: CodexTask) async {
+        do {
+            try await service.deleteTask(id: task.id)
+            tasks.removeAll { $0.id == task.id }
+            if tasks.isEmpty && composerMode == .none && !showingSettings {
+                showingTaskPanel = false
+            }
+        } catch {
+            print("Failed to delete task: \(error)")
         }
     }
 

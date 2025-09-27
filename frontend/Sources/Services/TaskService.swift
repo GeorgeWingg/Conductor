@@ -6,6 +6,7 @@ protocol TaskService: Sendable {
     func createVoiceTask(transcript: String, approvalMode: ApprovalMode) async throws -> CodexTask
     func approveTask(id: CodexTask.ID) async throws -> CodexTask
     func cancelTask(id: CodexTask.ID) async throws
+    func deleteTask(id: CodexTask.ID) async throws
 }
 
 struct BackendConfiguration {
@@ -65,6 +66,10 @@ struct BackendTaskService: TaskService {
     }
 
     func cancelTask(id: CodexTask.ID) async throws {
+        try await deleteTask(id: id)
+    }
+
+    func deleteTask(id: CodexTask.ID) async throws {
         let _: APIResponse<EmptyResponse> = try await request(path: "/api/tasks/\(id)", method: "DELETE")
     }
 

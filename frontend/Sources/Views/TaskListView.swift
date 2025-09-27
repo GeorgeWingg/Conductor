@@ -34,6 +34,7 @@ private struct TaskRowView: View {
     let task: CodexTask
     let isExpanded: Bool
     @EnvironmentObject private var store: TaskStore
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -51,6 +52,18 @@ private struct TaskRowView: View {
                 if task.needsAttention {
                     Image(systemName: "exclamationmark.circle.fill")
                         .foregroundStyle(.orange)
+                }
+                if task.status.isTerminal {
+                    Button(role: .destructive) {
+                        Task { await store.delete(task: task) }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 4)
+                    .opacity(isHovering ? 1 : 0.6)
+                    .help("Delete task")
                 }
             }
 
@@ -92,6 +105,9 @@ private struct TaskRowView: View {
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2)
         )
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 

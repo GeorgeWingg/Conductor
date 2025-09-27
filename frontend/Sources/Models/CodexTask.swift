@@ -90,6 +90,15 @@ enum TaskStatus: String, CaseIterable, Sendable {
             self = .idle
         }
     }
+
+    var isTerminal: Bool {
+        switch self {
+        case .completed, .failed:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 enum TaskBadgeColor: String, Sendable {
