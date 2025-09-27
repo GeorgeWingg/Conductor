@@ -17,6 +17,7 @@ final class TaskStore: ObservableObject {
     @Published var isRecordingVoice = false
     @Published var voiceDraft: VoiceDraft = .empty
     @Published var isLoading = false
+    @Published var defaultApprovalMode: ApprovalMode = .autoEdit
 
     nonisolated let service: TaskService
 
@@ -32,6 +33,7 @@ final class TaskStore: ObservableObject {
         } catch {
             print("Failed to load tasks: \(error)")
         }
+        showingTaskPanel = !tasks.isEmpty
         isLoading = false
     }
 
@@ -75,12 +77,13 @@ final class TaskStore: ObservableObject {
         voiceDraft = .empty
         showingSettings = false
         showingTaskPanel = false
+        selectedTaskID = nil
     }
 
     func submitTextTask(prompt: String) async {
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
-            let newTask = try await service.createTextTask(prompt: prompt)
+            let newTask = try await service.createTextTask(prompt: prompt, approvalMode: defaultApprovalMode)
             appendOrReplace(task: newTask)
             composerMode = .none
             showingTaskPanel = true
@@ -92,7 +95,7 @@ final class TaskStore: ObservableObject {
     func submitVoiceTask() async {
         guard !voiceDraft.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
-            let newTask = try await service.createVoiceTask(transcript: voiceDraft.transcript)
+            let newTask = try await service.createVoiceTask(transcript: voiceDraft.transcript, approvalMode: defaultApprovalMode)
             appendOrReplace(task: newTask)
             composerMode = .none
             voiceDraft = .empty
@@ -102,24 +105,24 @@ final class TaskStore: ObservableObject {
         }
     }
 
-    func update(task: CodexTask) async {
+    func approve(task: CodexTask) async {
         do {
-            let updated = try await service.updateTask(task)
+            let updated = try await service.approveTask(id: task.id)
             appendOrReplace(task: updated)
         } catch {
-            print("Failed to update task: \(error)")
+            print("Failed to approve task: \(error)")
         }
     }
 
-    func delete(taskID: CodexTask.ID) async {
+    func cancel(task: CodexTask) async {
         do {
-            try await service.deleteTask(id: taskID)
-            tasks.removeAll { $0.id == taskID }
+            try await service.cancelTask(id: task.id)
+            tasks.removeAll { $0.id == task.id }
             if tasks.isEmpty && composerMode == .none && !showingSettings {
                 showingTaskPanel = false
             }
         } catch {
-            print("Failed to delete task: \(error)")
+            print("Failed to cancel task: \(error)")
         }
     }
 

@@ -60,33 +60,25 @@ private struct TaskRowView: View {
                     Text("Latest activity")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("\(task.title) - awaiting next Codex update…")
+                    Text(task.currentStep ?? "Awaiting Codex update…")
                         .font(.callout)
                     HStack {
                         Button("Approve") {
-                            Task {
-                                var updated = task
-                                updated.status = .running
-                                updated.needsAttention = false
-                                await store.update(task: updated)
-                            }
+                            Task { await store.approve(task: task) }
                         }
                         .disabled(task.status != .waitingApproval)
+
                         Button("Cancel") {
-                            Task {
-                                var updated = task
-                                updated.status = .failed
-                                updated.needsAttention = false
-                                await store.update(task: updated)
-                            }
+                            Task { await store.cancel(task: task) }
                         }
                         .tint(.red)
-                        Button("Delete", role: .destructive) {
-                            Task { await store.delete(taskID: task.id) }
-                        }
+
                         Spacer()
-                        Button("Open Repo") {
-                            NSWorkspace.shared.open(task.repoPath)
+
+                        if let repo = task.repoPath {
+                            Button("Open Repo") {
+                                NSWorkspace.shared.open(repo)
+                            }
                         }
                     }
                 }

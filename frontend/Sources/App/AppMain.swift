@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: TaskStore!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        store = TaskStore(service: FakeTaskService())
+        store = TaskStore(service: BackendTaskService())
         let contentView = ContentView()
             .environmentObject(store)
 

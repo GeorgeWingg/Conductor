@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var store: TaskStore
     var closeAction: () -> Void
-    @State private var defaultApprovalMode: ApprovalMode = .autoEdit
     @State private var codexPath: String = "~/workspace/codex"
 
     var body: some View {
@@ -23,7 +22,7 @@ struct SettingsView: View {
                 Text("Task Defaults")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                Picker("Approval Mode", selection: $defaultApprovalMode) {
+                Picker("Approval Mode", selection: $store.defaultApprovalMode) {
                     ForEach(ApprovalMode.allCases, id: \.self) { mode in
                         Text(mode.label).tag(mode)
                     }

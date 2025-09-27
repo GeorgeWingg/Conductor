@@ -1,38 +1,27 @@
 import Foundation
 
-struct CodexTask: Identifiable, Codable, Equatable {
-    enum CodingKeys: String, CodingKey {
-        case id
-        case title
-        case status
-        case approvalMode
-        case createdAt
-        case updatedAt
-        case repoPath
-        case currentStep
-        case needsAttention
-        case progress
-    }
+struct CodexTask: Identifiable, Equatable, Sendable {
+    typealias ID = String
 
-    let id: UUID
+    let id: ID
     var title: String
     var status: TaskStatus
     var approvalMode: ApprovalMode
     var createdAt: Date
     var updatedAt: Date
-    var repoPath: URL
+    var repoPath: URL?
     var currentStep: String?
     var needsAttention: Bool
     var progress: Double?
 
     init(
-        id: UUID = UUID(),
+        id: ID = UUID().uuidString,
         title: String,
         status: TaskStatus,
         approvalMode: ApprovalMode,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        repoPath: URL,
+        repoPath: URL? = nil,
         currentStep: String? = nil,
         needsAttention: Bool = false,
         progress: Double? = nil
@@ -50,7 +39,7 @@ struct CodexTask: Identifiable, Codable, Equatable {
     }
 }
 
-enum TaskStatus: String, Codable, CaseIterable {
+enum TaskStatus: String, CaseIterable, Sendable {
     case idle
     case queued
     case running
@@ -81,9 +70,29 @@ enum TaskStatus: String, Codable, CaseIterable {
         case .failed: return .danger
         }
     }
+
+    init(backendStatus: String) {
+        let normalized = backendStatus.lowercased()
+
+        if normalized.contains("wait") || normalized.contains("approval") {
+            self = .waitingApproval
+        } else if normalized.contains("queue") || normalized.contains("pending") {
+            self = .queued
+        } else if normalized.contains("run") || normalized.contains("progress") {
+            self = .running
+        } else if normalized.contains("complete") || normalized.contains("success") {
+            self = .completed
+        } else if normalized.contains("fail") || normalized.contains("error") || normalized.contains("cancel") {
+            self = .failed
+        } else if normalized.contains("pause") {
+            self = .paused
+        } else {
+            self = .idle
+        }
+    }
 }
 
-enum TaskBadgeColor: String {
+enum TaskBadgeColor: String, Sendable {
     case neutral
     case active
     case attention
@@ -91,7 +100,7 @@ enum TaskBadgeColor: String {
     case danger
 }
 
-enum ApprovalMode: String, Codable, CaseIterable {
+enum ApprovalMode: String, CaseIterable, Sendable {
     case suggest
     case autoEdit
     case fullAuto
@@ -103,10 +112,18 @@ enum ApprovalMode: String, Codable, CaseIterable {
         case .fullAuto: return "Full Auto"
         }
     }
+
+    init(backendValue: String) {
+        switch backendValue.lowercased() {
+        case "full-auto", "full_auto": self = .fullAuto
+        case "auto-edit", "auto_edit": self = .autoEdit
+        default: self = .suggest
+        }
+    }
 }
 
-struct TaskEvent: Identifiable, Codable, Equatable {
-    enum Kind: String, Codable {
+struct TaskEvent: Identifiable, Equatable, Sendable {
+    enum Kind: String, Sendable {
         case log
         case diff
         case stateChange
@@ -114,14 +131,14 @@ struct TaskEvent: Identifiable, Codable, Equatable {
     }
 
     let id: UUID
-    let taskID: UUID
+    let taskID: CodexTask.ID
     let timestamp: Date
     let kind: Kind
     let message: String
 
     init(
         id: UUID = UUID(),
-        taskID: UUID,
+        taskID: CodexTask.ID,
         timestamp: Date = Date(),
         kind: Kind,
         message: String
@@ -133,6 +150,3 @@ struct TaskEvent: Identifiable, Codable, Equatable {
         self.message = message
     }
 }
-
-extension CodexTask: Sendable {}
-extension TaskEvent: Sendable {}
