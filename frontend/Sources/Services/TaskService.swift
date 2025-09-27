@@ -7,6 +7,7 @@ protocol TaskService: Sendable {
     func approveTask(id: CodexTask.ID) async throws -> CodexTask
     func cancelTask(id: CodexTask.ID) async throws
     func deleteTask(id: CodexTask.ID) async throws
+    func fetchLogs(for id: CodexTask.ID) async throws -> [TaskEvent]
 }
 
 struct BackendConfiguration {
@@ -71,6 +72,12 @@ struct BackendTaskService: TaskService {
 
     func deleteTask(id: CodexTask.ID) async throws {
         let _: APIResponse<EmptyResponse> = try await request(path: "/api/tasks/\(id)", method: "DELETE")
+    }
+
+    func fetchLogs(for id: CodexTask.ID) async throws -> [TaskEvent] {
+        let response: APIResponse<[TaskLogDTO]> = try await request(path: "/api/tasks/\(id)/logs", method: "GET")
+        let logs = response.data ?? []
+        return logs.compactMap { TaskEvent(dto: $0, taskID: id) }
     }
 
     // MARK: - Private helpers
@@ -172,10 +179,10 @@ private struct TaskDTO: Decodable {
     let logs: [TaskLogDTO]?
 }
 
-private struct TaskLogDTO: Decodable {
+struct TaskLogDTO: Decodable {
     let timestamp: Date?
     let type: String?
-    let message: String
+    let message: String?
 }
 
 private struct EmptyResponse: Decodable {}

@@ -35,6 +35,8 @@ private struct TaskRowView: View {
     let isExpanded: Bool
     @EnvironmentObject private var store: TaskStore
     @State private var isHovering = false
+    @State private var isLoadingLogs = false
+    @State private var hasLoadedLogs = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -73,8 +75,28 @@ private struct TaskRowView: View {
                     Text("Latest activity")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(task.currentStep ?? "Awaiting Codex update…")
-                        .font(.callout)
+                    if isLoadingLogs && store.logs(for: task.id).isEmpty {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: true) {
+                            LazyVStack(alignment: .leading, spacing: 6) {
+                                ForEach(store.logs(for: task.id)) { event in
+                                    LogLineView(event: event)
+                                }
+                            }
+                            .padding(.trailing, 4)
+                        }
+                        .frame(height: min(180, max(80, CGFloat(store.logs(for: task.id).count) * 20)))
+                        .onChange(of: store.logs(for: task.id)) { logs in
+                            if let last = logs.last {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                }
+                            }
+                        }
+                    }
                     HStack {
                         Button("Approve") {
                             Task { await store.approve(task: task) }
@@ -107,6 +129,46 @@ private struct TaskRowView: View {
         )
         .onHover { hovering in
             isHovering = hovering
+        }
+        .onChange(of: isExpanded) { expanded in
+            if expanded { loadLogsIfNeeded() }
+        }
+        .onAppear {
+            if isExpanded { loadLogsIfNeeded() }
+        }
+    }
+
+    private func loadLogsIfNeeded() {
+        guard !hasLoadedLogs else { return }
+        hasLoadedLogs = true
+        isLoadingLogs = true
+        Task {
+            await store.loadLogs(for: task)
+            await MainActor.run { isLoadingLogs = false }
+        }
+    }
+}
+
+private struct LogLineView: View {
+    let event: TaskEvent
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(event.timestamp, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(event.message)
+                .font(.caption)
+                .foregroundStyle(colorForKind(event.kind))
+        }
+        .id(event.id)
+    }
+
+    private func colorForKind(_ kind: TaskEvent.Kind) -> Color {
+        switch kind {
+        case .error: return .red
+        case .diff: return .blue
+        default: return .primary
         }
     }
 }

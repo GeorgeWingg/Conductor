@@ -158,4 +158,12 @@ struct TaskEvent: Identifiable, Equatable, Sendable {
         self.kind = kind
         self.message = message
     }
+
+    init?(dto: TaskLogDTO, taskID: CodexTask.ID) {
+        guard let message = dto.message else { return nil }
+        let rawKind = dto.type?.lowercased() ?? "log"
+        let kind = Kind(rawValue: rawKind) ?? .log
+        let timestamp = dto.timestamp ?? Date()
+        self.init(taskID: taskID, timestamp: timestamp, kind: kind, message: message)
+    }
 }

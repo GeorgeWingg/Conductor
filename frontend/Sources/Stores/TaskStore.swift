@@ -18,6 +18,7 @@ final class TaskStore: ObservableObject {
     @Published var voiceDraft: VoiceDraft = .empty
     @Published var isLoading = false
     @Published var defaultApprovalMode: ApprovalMode = .autoEdit
+    @Published private(set) var taskLogs: [CodexTask.ID: [TaskEvent]] = [:]
     @Published var voiceErrorMessage: String?
     @Published var isProcessingVoice = false
 
@@ -25,9 +26,19 @@ final class TaskStore: ObservableObject {
     private let voiceCaptureService: VoiceCaptureService
     private let transcriptionService: VoiceTranscriptionService
 
+    private let activePollInterval: TimeInterval = 30
+    private let idlePollInterval: TimeInterval = 120
+    private let minimumRefreshSpacing: TimeInterval = 5
+
     private var refreshTask: Task<Void, Never>?
-    private var pollInterval: TimeInterval = 15
+    private var pollInterval: TimeInterval
+    private var lastRefreshDate: Date?
+    private var nextAllowedRefresh: Date?
+    private var isRefreshing = false
+    private var pendingForcedRefresh = false
+    private var rateLimitRetryTask: Task<Void, Never>?
     private var pendingRecordingURL: URL?
+    private var voiceTranscriptionTask: Task<Void, Never>?
 
     init(
         service: TaskService,
@@ -37,6 +48,7 @@ final class TaskStore: ObservableObject {
         self.service = service
         self.voiceCaptureService = voiceCaptureService
         self.transcriptionService = transcriptionService
+        self.pollInterval = activePollInterval
 
         voiceCaptureService.levelHandler = { [weak self] level in
             guard let self else { return }
@@ -48,9 +60,17 @@ final class TaskStore: ObservableObject {
             switch result {
             case .success(let url):
                 self.pendingRecordingURL = url
-                Task { await self.transcribeVoice(at: url) }
+                self.voiceTranscriptionTask?.cancel()
+                self.voiceTranscriptionTask = Task { [weak self] in
+                    await self?.transcribeVoice(at: url)
+                }
             case .failure(let error):
-                self.voiceErrorMessage = error.localizedDescription
+                if let captureError = error as? VoiceCaptureService.VoiceCaptureError,
+                   captureError == .cancelled {
+                    self.voiceErrorMessage = nil
+                } else {
+                    self.voiceErrorMessage = error.localizedDescription
+                }
                 self.pendingRecordingURL = nil
             }
         }
@@ -58,12 +78,14 @@ final class TaskStore: ObservableObject {
 
     deinit {
         refreshTask?.cancel()
+        voiceTranscriptionTask?.cancel()
+        rateLimitRetryTask?.cancel()
     }
 
     func loadInitial() async {
         guard !isLoading else { return }
         isLoading = true
-        await refreshTasks()
+        await refreshTasks(force: true)
         isLoading = false
         startPolling()
     }
@@ -77,7 +99,8 @@ final class TaskStore: ObservableObject {
 
     func openVoiceComposer() {
         composerMode = .voice
-        voiceDraft = .recording
+        voiceDraft = .empty
+        voiceErrorMessage = nil
         showingSettings = false
         showingTaskPanel = true
     }
@@ -98,6 +121,8 @@ final class TaskStore: ObservableObject {
     func closeComposer() {
         composerMode = .none
         voiceDraft = .empty
+        voiceErrorMessage = nil
+        cancelVoiceCapture()
         if !showingSettings && tasks.isEmpty {
             showingTaskPanel = false
         }
@@ -106,9 +131,19 @@ final class TaskStore: ObservableObject {
     func hideAllPanels() {
         composerMode = .none
         voiceDraft = .empty
+        voiceErrorMessage = nil
         showingSettings = false
         showingTaskPanel = false
         selectedTaskID = nil
+        cancelVoiceCapture()
+    }
+
+    func toggleVoiceRecording() {
+        if voiceCaptureService.isRecording {
+            stopVoiceRecording()
+        } else {
+            Task { await startVoiceRecording() }
+        }
     }
 
     func submitTextTask(prompt: String) async {
@@ -118,7 +153,7 @@ final class TaskStore: ObservableObject {
             appendOrReplace(task: newTask)
             composerMode = .none
             showingTaskPanel = true
-            await refreshTasks()
+            await refreshTasks(force: true)
         } catch {
             print("Failed to create text task: \(error)")
         }
@@ -131,10 +166,74 @@ final class TaskStore: ObservableObject {
             appendOrReplace(task: newTask)
             composerMode = .none
             voiceDraft = .empty
+            voiceErrorMessage = nil
             showingTaskPanel = true
-            await refreshTasks()
+            await refreshTasks(force: true)
         } catch {
             print("Failed to create voice task: \(error)")
+        }
+    }
+
+    private func startVoiceRecording() async {
+        guard !voiceCaptureService.isRecording else { return }
+        voiceErrorMessage = nil
+
+        do {
+            try await voiceCaptureService.startRecording()
+            voiceDraft = .recording
+            isRecordingVoice = true
+        } catch {
+            voiceDraft = .empty
+            voiceErrorMessage = error.localizedDescription
+            isRecordingVoice = false
+        }
+    }
+
+    private func stopVoiceRecording() {
+        guard voiceCaptureService.isRecording else { return }
+        voiceCaptureService.stopRecording()
+        isRecordingVoice = false
+        voiceDraft.isRecording = false
+    }
+
+    private func cancelVoiceCapture() {
+        if voiceCaptureService.isRecording {
+            voiceCaptureService.cancelRecording()
+        }
+
+        if let url = pendingRecordingURL {
+            try? FileManager.default.removeItem(at: url)
+            pendingRecordingURL = nil
+        }
+
+        voiceTranscriptionTask?.cancel()
+        voiceTranscriptionTask = nil
+        isProcessingVoice = false
+        isRecordingVoice = false
+        voiceDraft = .empty
+    }
+
+    private func transcribeVoice(at url: URL) async {
+        if Task.isCancelled { return }
+        isProcessingVoice = true
+        voiceErrorMessage = nil
+
+        defer {
+            isProcessingVoice = false
+            try? FileManager.default.removeItem(at: url)
+            if pendingRecordingURL == url {
+                pendingRecordingURL = nil
+            }
+        }
+
+        do {
+            let transcript = try await transcriptionService.transcribeAudio(fileURL: url)
+            if Task.isCancelled { return }
+            voiceDraft.transcript = transcript
+        } catch is CancellationError {
+            return
+        } catch {
+            voiceErrorMessage = error.localizedDescription
         }
     }
 
@@ -142,7 +241,7 @@ final class TaskStore: ObservableObject {
         do {
             let updated = try await service.approveTask(id: task.id)
             appendOrReplace(task: updated)
-            await refreshTasks()
+            await refreshTasks(force: true)
         } catch {
             print("Failed to approve task: \(error)")
         }
@@ -151,11 +250,14 @@ final class TaskStore: ObservableObject {
     func cancel(task: CodexTask) async {
         do {
             try await service.cancelTask(id: task.id)
-            tasks.removeAll { $0.id == task.id }
-            if tasks.isEmpty && composerMode == .none && !showingSettings {
-                showingTaskPanel = false
+            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                var updated = tasks[index]
+                updated.status = .failed
+                updated.currentStep = "Cancellation requested..."
+                updated.needsAttention = false
+                tasks[index] = updated
             }
-            await refreshTasks()
+            await refreshTasks(force: true)
         } catch {
             print("Failed to cancel task: \(error)")
         }
@@ -165,11 +267,26 @@ final class TaskStore: ObservableObject {
         do {
             try await service.deleteTask(id: task.id)
             tasks.removeAll { $0.id == task.id }
+            taskLogs[task.id] = nil
             if tasks.isEmpty && composerMode == .none && !showingSettings {
                 showingTaskPanel = false
             }
+            await refreshTasks(force: true)
         } catch {
             print("Failed to delete task: \(error)")
+        }
+    }
+
+    func logs(for taskID: CodexTask.ID) -> [TaskEvent] {
+        taskLogs[taskID] ?? []
+    }
+
+    func loadLogs(for task: CodexTask) async {
+        do {
+            let logs = try await service.fetchLogs(for: task.id)
+            taskLogs[task.id] = logs.sorted { $0.timestamp < $1.timestamp }
+        } catch {
+            print("Failed to load logs: \(error)")
         }
     }
 
@@ -203,7 +320,7 @@ final class TaskStore: ObservableObject {
 
     private func startPolling() {
         refreshTask?.cancel()
-        refreshTask = Task { [weak self] in
+        refreshTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled {
                 let interval = self.pollInterval
                 try? await Task.sleep(for: .seconds(interval))
@@ -212,7 +329,38 @@ final class TaskStore: ObservableObject {
         }
     }
 
-    private func refreshTasks() async {
+    private func refreshTasks(force: Bool = false) async {
+        if let nextAllowedRefresh, Date() < nextAllowedRefresh {
+            if force {
+                pendingForcedRefresh = true
+            }
+            return
+        }
+
+        if isRefreshing {
+            if force {
+                pendingForcedRefresh = true
+            }
+            return
+        }
+
+        if !force,
+           let lastRefreshDate,
+           Date().timeIntervalSince(lastRefreshDate) < minimumRefreshSpacing {
+            return
+        }
+
+        if force {
+            pendingForcedRefresh = false
+        }
+
+        isRefreshing = true
+        defer {
+            lastRefreshDate = Date()
+            isRefreshing = false
+            processPendingForcedRefresh()
+        }
+
         do {
             let fetched = try await service.fetchTasks()
             let sorted = fetched.sorted { $0.updatedAt > $1.updatedAt }
@@ -228,14 +376,28 @@ final class TaskStore: ObservableObject {
             }
 
             updatePollInterval(for: sorted)
+            nextAllowedRefresh = nil
         } catch {
             handleRefreshError(error)
         }
     }
 
+    private func processPendingForcedRefresh() {
+        guard pendingForcedRefresh else { return }
+
+        if let nextAllowedRefresh, Date() < nextAllowedRefresh {
+            return
+        }
+
+        pendingForcedRefresh = false
+        Task { [weak self] in
+            await self?.refreshTasks(force: true)
+        }
+    }
+
     private func updatePollInterval(for tasks: [CodexTask]) {
         let hasActive = tasks.contains { [.queued, .running, .waitingApproval].contains($0.status) }
-        pollInterval = hasActive ? 15 : 45
+        pollInterval = hasActive ? activePollInterval : idlePollInterval
     }
 
     private func handleRefreshError(_ error: Error) {
@@ -243,8 +405,14 @@ final class TaskStore: ObservableObject {
             switch taskError {
             case let .httpError(status, message) where status == 429:
                 let backoff = parseRetryAfter(from: message) ?? 60
-                pollInterval = max(backoff, 30)
-                print("Hit rate limit, backing off polling to \(Int(pollInterval))s")
+                pollInterval = max(backoff, minimumRefreshSpacing)
+                nextAllowedRefresh = Date().addingTimeInterval(backoff)
+                rateLimitRetryTask?.cancel()
+                rateLimitRetryTask = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(backoff))
+                    await self?.refreshTasks(force: true)
+                }
+                print("Hit rate limit, backing off polling to \(Int(backoff))s")
             default:
                 print("Failed to refresh tasks: \(taskError.localizedDescription)")
             }
