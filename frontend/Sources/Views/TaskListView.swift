@@ -109,18 +109,8 @@ private struct StatusBadge: View {
             .fontWeight(.semibold)
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
-            .background(backgroundColor)
+            .background(status.badgeColor.color)
             .foregroundStyle(.white)
             .clipShape(Capsule())
-    }
-
-    private var backgroundColor: Color {
-        switch status.badgeColor {
-        case .neutral: return Color.gray.opacity(0.6)
-        case .active: return Color.blue
-        case .attention: return Color.orange
-        case .success: return Color.green
-        case .danger: return Color.red
-        }
     }
 }
