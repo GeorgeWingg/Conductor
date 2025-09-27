@@ -81,6 +81,9 @@ private struct TaskRowView: View {
                             }
                         }
                         .tint(.red)
+                        Button("Delete", role: .destructive) {
+                            Task { await store.delete(taskID: task.id) }
+                        }
                         Spacer()
                         Button("Open Repo") {
                             NSWorkspace.shared.open(task.repoPath)

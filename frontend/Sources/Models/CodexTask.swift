@@ -133,3 +133,6 @@ struct TaskEvent: Identifiable, Codable, Equatable {
         self.message = message
     }
 }
+
+extension CodexTask: Sendable {}
+extension TaskEvent: Sendable {}

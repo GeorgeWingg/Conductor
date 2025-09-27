@@ -12,7 +12,7 @@ final class TaskStore: ObservableObject {
     @Published private(set) var tasks: [CodexTask] = []
     @Published var selectedTaskID: CodexTask.ID?
     @Published var composerMode: ComposerMode = .none
-    @Published var isSettingsPresented = false
+    @Published var showingSettings = false
     @Published var isRecordingVoice = false
     @Published var voiceDraft: VoiceDraft = .empty
     @Published var isLoading = false
@@ -30,7 +30,6 @@ final class TaskStore: ObservableObject {
             tasks = try await service.fetchTasks()
         } catch {
             print("Failed to load tasks: \(error)")
-            tasks = MockData.sampleTasks
         }
         isLoading = false
     }
@@ -43,6 +42,10 @@ final class TaskStore: ObservableObject {
     func openVoiceComposer() {
         composerMode = .voice
         voiceDraft = .recording
+    }
+
+    func toggleSettings() {
+        showingSettings.toggle()
     }
 
     func closeComposer() {
@@ -79,6 +82,15 @@ final class TaskStore: ObservableObject {
             appendOrReplace(task: updated)
         } catch {
             print("Failed to update task: \(error)")
+        }
+    }
+
+    func delete(taskID: CodexTask.ID) async {
+        do {
+            try await service.deleteTask(id: taskID)
+            tasks.removeAll { $0.id == taskID }
+        } catch {
+            print("Failed to delete task: \(error)")
         }
     }
 

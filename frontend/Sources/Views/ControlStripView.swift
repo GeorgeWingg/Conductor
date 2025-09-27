@@ -14,7 +14,7 @@ struct ControlStripView: View {
                     withAnimation(.easeInOut) { store.openVoiceComposer() }
                 }
                 circleButton(systemName: "gearshape.fill") {
-                    store.isSettingsPresented = true
+                    withAnimation(.easeInOut) { store.toggleSettings() }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -27,10 +27,14 @@ struct ControlStripView: View {
             case .voice:
                 VoiceComposerView()
             }
-        }
-        .sheet(isPresented: $store.isSettingsPresented) {
-            SettingsView()
+
+            if store.showingSettings {
+                SettingsView(closeAction: {
+                    withAnimation(.easeInOut) { store.showingSettings = false }
+                })
                 .environmentObject(store)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
     }
 
@@ -53,7 +57,7 @@ struct ControlStripView: View {
         switch systemName {
         case "plus": return "Start a text task"
         case "mic.fill": return "Start a voice task"
-        case "gearshape.fill": return "Open settings"
+        case "gearshape.fill": return store.showingSettings ? "Hide settings" : "Open settings"
         default: return ""
         }
     }
