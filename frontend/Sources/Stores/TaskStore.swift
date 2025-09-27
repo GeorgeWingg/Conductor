@@ -20,21 +20,22 @@ final class TaskStore: ObservableObject {
     @Published var defaultApprovalMode: ApprovalMode = .autoEdit
 
     nonisolated let service: TaskService
+    private var refreshTask: Task<Void, Never>?
 
     init(service: TaskService) {
         self.service = service
     }
 
+    deinit {
+        refreshTask?.cancel()
+    }
+
     func loadInitial() async {
         guard !isLoading else { return }
         isLoading = true
-        do {
-            tasks = try await service.fetchTasks()
-        } catch {
-            print("Failed to load tasks: \(error)")
-        }
-        showingTaskPanel = !tasks.isEmpty
+        await refreshTasks()
         isLoading = false
+        startPolling()
     }
 
     func openTextComposer() {
@@ -87,6 +88,7 @@ final class TaskStore: ObservableObject {
             appendOrReplace(task: newTask)
             composerMode = .none
             showingTaskPanel = true
+            await refreshTasks()
         } catch {
             print("Failed to create text task: \(error)")
         }
@@ -100,6 +102,7 @@ final class TaskStore: ObservableObject {
             composerMode = .none
             voiceDraft = .empty
             showingTaskPanel = true
+            await refreshTasks()
         } catch {
             print("Failed to create voice task: \(error)")
         }
@@ -109,6 +112,7 @@ final class TaskStore: ObservableObject {
         do {
             let updated = try await service.approveTask(id: task.id)
             appendOrReplace(task: updated)
+            await refreshTasks()
         } catch {
             print("Failed to approve task: \(error)")
         }
@@ -121,6 +125,7 @@ final class TaskStore: ObservableObject {
             if tasks.isEmpty && composerMode == .none && !showingSettings {
                 showingTaskPanel = false
             }
+            await refreshTasks()
         } catch {
             print("Failed to cancel task: \(error)")
         }
@@ -151,6 +156,35 @@ final class TaskStore: ObservableObject {
             tasks[index] = task
         } else {
             tasks.insert(task, at: 0)
+        }
+    }
+
+    private func startPolling() {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                await self.refreshTasks()
+            }
+        }
+    }
+
+    private func refreshTasks() async {
+        do {
+            let fetched = try await service.fetchTasks()
+            let sorted = fetched.sorted { $0.updatedAt > $1.updatedAt }
+            let previousSelection = selectedTaskID
+            tasks = sorted
+
+            if !sorted.contains(where: { $0.id == previousSelection }) {
+                selectedTaskID = nil
+            }
+
+            if composerMode == .none && !showingSettings {
+                showingTaskPanel = !sorted.isEmpty
+            }
+        } catch {
+            print("Failed to refresh tasks: \(error)")
         }
     }
 }
