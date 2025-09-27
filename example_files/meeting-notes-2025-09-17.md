@@ -1,0 +1,2 @@
+- decide: menu bar first, window later
+- name: Conductor

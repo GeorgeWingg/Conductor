@@ -1,0 +1,2 @@
+RPS rules: Rock>Scissors, Paper>Rock, Scissors>Paper
+State: playerScore, cpuScore, lastResult

@@ -1,0 +1,3 @@
+- Buttons trigger result text update
+- Score increments only on win/loss
+- Layout scales to 360px width

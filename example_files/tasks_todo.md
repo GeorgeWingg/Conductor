@@ -1,0 +1,4 @@
+- [ ] Keyboard shortcuts (R/P/S)
+- [ ] Reset score
+- [ ] Simple animations
+- [ ] Accessibility labels
