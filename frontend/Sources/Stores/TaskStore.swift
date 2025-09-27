@@ -13,6 +13,7 @@ final class TaskStore: ObservableObject {
     @Published var selectedTaskID: CodexTask.ID?
     @Published var composerMode: ComposerMode = .none
     @Published var showingSettings = false
+    @Published var showingTaskPanel = false
     @Published var isRecordingVoice = false
     @Published var voiceDraft: VoiceDraft = .empty
     @Published var isLoading = false
@@ -37,20 +38,43 @@ final class TaskStore: ObservableObject {
     func openTextComposer() {
         composerMode = .text
         voiceDraft = .empty
+        showingSettings = false
+        showingTaskPanel = true
     }
 
     func openVoiceComposer() {
         composerMode = .voice
         voiceDraft = .recording
+        showingSettings = false
+        showingTaskPanel = true
     }
 
     func toggleSettings() {
-        showingSettings.toggle()
+        if showingSettings {
+            showingSettings = false
+            if composerMode == .none && tasks.isEmpty {
+                showingTaskPanel = false
+            }
+        } else {
+            composerMode = .none
+            showingSettings = true
+            showingTaskPanel = true
+        }
     }
 
     func closeComposer() {
         composerMode = .none
         voiceDraft = .empty
+        if !showingSettings && tasks.isEmpty {
+            showingTaskPanel = false
+        }
+    }
+
+    func hideAllPanels() {
+        composerMode = .none
+        voiceDraft = .empty
+        showingSettings = false
+        showingTaskPanel = false
     }
 
     func submitTextTask(prompt: String) async {
@@ -59,6 +83,7 @@ final class TaskStore: ObservableObject {
             let newTask = try await service.createTextTask(prompt: prompt)
             appendOrReplace(task: newTask)
             composerMode = .none
+            showingTaskPanel = true
         } catch {
             print("Failed to create text task: \(error)")
         }
@@ -71,6 +96,7 @@ final class TaskStore: ObservableObject {
             appendOrReplace(task: newTask)
             composerMode = .none
             voiceDraft = .empty
+            showingTaskPanel = true
         } catch {
             print("Failed to create voice task: \(error)")
         }
@@ -89,6 +115,9 @@ final class TaskStore: ObservableObject {
         do {
             try await service.deleteTask(id: taskID)
             tasks.removeAll { $0.id == taskID }
+            if tasks.isEmpty && composerMode == .none && !showingSettings {
+                showingTaskPanel = false
+            }
         } catch {
             print("Failed to delete task: \(error)")
         }
