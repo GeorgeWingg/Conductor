@@ -1,0 +1,33 @@
+{
+  "name": "conductor-backend",
+  "version": "1.0.0",
+  "description": "Backend service for Conductor - AI-powered task management through Codex CLI",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node test/test-runner.js",
+    "lint": "echo 'No linter configured yet'",
+    "setup": "node scripts/setup.js"
+  },
+  "keywords": [
+    "ai",
+    "codex",
+    "task-management",
+    "hackathon"
+  ],
+  "author": "Conductor Team",
+  "license": "ISC",
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "socket.io": "^4.8.1",
+    "sqlite3": "^5.1.7",
+    "ws": "^8.18.3"
+  }
+}
